@@ -78,7 +78,7 @@ def evaluate_primary(tokens, i):
 
 def evaluate_expression(tokens, i):
     left, i = evaluate_primary(tokens, i)
-    while i < len(tokens) and tokens[i][0] in ('PLUS', 'MINUS', 'TIMES', 'DIVIDE', 'GT', 'LT'):
+    while i < len(tokens) and tokens[i][0] in ('PLUS', 'MINUS', 'TIMES', 'DIVIDE', 'GT', 'LT', 'EQ', 'NEQ', 'GTE', 'LTE'):
         op = tokens[i][0]
         i += 1
         right, i = evaluate_primary(tokens, i)
@@ -255,12 +255,28 @@ def execute_if(tokens, i, local_env):
     if i >= len(tokens) or tokens[i][0] != 'LBRACE':
         raise SyntaxError("Expected '{' after condition")
     i += 1
+    body_tokens = []
+    brace_count = 1
+    while i < len(tokens) and brace_count > 0:
+        if tokens[i][0] == 'LBRACE':
+            brace_count += 1
+        elif tokens[i][0] == 'RBRACE':
+            brace_count -= 1
+            if brace_count == 0:
+                break
+        body_tokens.append(tokens[i])
+        i += 1
+    if brace_count != 0:
+        raise SyntaxError("Expected '}' after if body")
+    i += 1
     if condition:
-        i = execute_block(tokens, i, local_env)
-    else:
-        while i < len(tokens) and tokens[i][0] != 'RBRACE':
-            i += 1
-    return i + 1
+        execute_block(body_tokens, 0, local_env)
+        if i < len(tokens) and tokens[i][0] == 'ELSE':
+            # Skip else block if condition was true
+            i = execute_else(tokens, i, None)  # Pass None to skip execution
+    elif i < len(tokens) and tokens[i][0] == 'ELSE':
+        i = execute_else(tokens, i, local_env)
+    return i
 
 def execute_else(tokens, i, local_env):
     if tokens[i][0] != 'ELSE':
@@ -269,7 +285,21 @@ def execute_else(tokens, i, local_env):
     if i >= len(tokens) or tokens[i][0] != 'LBRACE':
         raise SyntaxError("Expected '{' after 'alreves'")
     i += 1
-    i = execute_block(tokens, i, local_env)
+    body_tokens = []
+    brace_count = 1
+    while i < len(tokens) and brace_count > 0:
+        if tokens[i][0] == 'LBRACE':
+            brace_count += 1
+        elif tokens[i][0] == 'RBRACE':
+            brace_count -= 1
+            if brace_count == 0:
+                break
+        body_tokens.append(tokens[i])
+        i += 1
+    if brace_count != 0:
+        raise SyntaxError("Expected '}' after else body")
+    i += 1
+    execute_block(body_tokens, 0, local_env)
     return i
 
 def execute_while(tokens, i, local_env):
@@ -442,70 +472,91 @@ def run_program(code):
     tokens = tokenize(code)
     execute_block(tokens)
 
-# Caso de prueba original
-code = '''
-imprimir("Hola Mundo")
-x = 5
-y = 10
-imprimir(x + y)
-si (x > y) {
-    imprimir("x es mayor que y")
-} alreves {
-    imprimir("y es mayor que x")
-}
-'''
-run_program(code)
+# # Caso de prueba original
+# code = '''
+# imprimir("Hola Mundo")
+# x = 5
+# y = 10
+# imprimir(x + y)
+# si (x > y) {
+#     imprimir("x es mayor que y")
+# } alreves {
+#     imprimir("y es mayor que x")
+# }
+# '''
+# run_program(code)
 
-# Caso de prueba: while (mientras)
-code_mientras = '''
-contador = 0
-mientras (contador < 3) {
-    imprimir(contador)
-    contador = contador + 1
-}
-'''
-print("\n--- Ejecutando 'mientras' ---")
-run_program(code_mientras)
+# # Caso de prueba: while (mientras)
+# code_mientras = '''
+# contador = 0
+# mientras (contador < 3) {
+#     imprimir(contador)
+#     contador = contador + 1
+# }
+# '''
+# print("\n--- Ejecutando 'mientras' ---")
+# run_program(code_mientras)
 
-# Caso de prueba: for (para)
-code_para = '''
-para (i = 0; i < 3; i = i + 1) {
-    imprimir(i)
-}
-'''
-print("\n--- Ejecutando 'para' ---")
-run_program(code_para)
+# # Caso de prueba: for (para)
+# code_para = '''
+# para (i = 0; i < 3; i = i + 1) {
+#     imprimir(i)
+# }
+# '''
+# print("\n--- Ejecutando 'para' ---")
+# run_program(code_para)
 
-# Caso de prueba: función y llamada
-code_func = '''
-funcion suma(a, b) {
-    retorna a + b
-}
-resultado = suma(5, 7)
-imprimir(resultado)
-'''
-print("\n--- Ejecutando función 'suma' ---")
-run_program(code_func)
+# # Caso de prueba: función y llamada
+# code_func = '''
+# funcion suma(a, b) {
+#     retorna a + b
+# }
+# resultado = suma(5, 7)
+# imprimir(resultado)
+# '''
+# print("\n--- Ejecutando función 'suma' ---")
+# run_program(code_func)
 
-# Caso de prueba: array
-code_array = '''
-miArray = [1, 2, 3, 4]
-imprimir(miArray)
-'''
-print("\n--- Ejecutando array ---")
-run_program(code_array)
+# # Caso de prueba: array
+# code_array = '''
+# miArray = [1, 2, 3, 4]
+# imprimir(miArray)
+# '''
+# print("\n--- Ejecutando array ---")
+# run_program(code_array)
 
 def run_program_from_file(file_path):
     with open(file_path, 'r') as file:
         code = file.read()
-    run_program(code)
+        run_program(code)
 
 # Ejecutar programa desde archivo
 import os
+import sys
 
-file_path = os.path.join(os.getcwd(), 'programa.txt')
+def repl():
+    print("Bienvenido al intérprete interactivo. Escribe 'salir' para terminar.")
+    while True:
+        try:
+            code = input(">>> ")
+            if code.strip().lower() == 'salir':
+                break
+            run_program(code)
+        except Exception as e:
+            print(f"Error: {e}")
+
+
+
+if len(sys.argv) < 2:
+    repl()
+    sys.exit(0)
+
+file_path = sys.argv[1]
+if not file_path.endswith('.sp'):
+    print("Error: The file must have a .sp extension")
+    sys.exit(1)
+
 if os.path.exists(file_path):
-    print("\n--- Ejecutando programa desde archivo ---")
     run_program_from_file(file_path)
 else:
     print(f"El archivo {file_path} no existe.")

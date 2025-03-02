@@ -5,7 +5,7 @@ class ReturnException(Exception):
     def __init__(self, value):
         self.value = value
 
-# Global environment: almacena variables y funciones
+# Global environment: stores variables and functions
 env = {}
 
 def tokenize(code):
@@ -17,6 +17,7 @@ def tokenize(code):
         ('MIENTRAS', r'mientras'),
         ('PARA', r'para'),
         ('PRINT', r'imprimir'),
+        ('INPUT', r'entrada'),  # New token for input
         ('IF', r'si'),
         ('ELSE', r'alreves'),
         ('ID', r'[a-zA-Z_][a-zA-Z0-9_]*'),
@@ -53,7 +54,7 @@ def evaluate_primary(tokens, i):
     if i >= len(tokens):
         raise SyntaxError("Unexpected end of expression")
     token_type, token_value = tokens[i]
-    # Función call: ID seguido de LPAREN
+    # Function call: ID followed by LPAREN
     if token_type == 'ID' and (i+1 < len(tokens) and tokens[i+1][0] == 'LPAREN'):
         return evaluate_function_call(tokens, i)
     if token_type == 'NUMBER':
@@ -98,7 +99,7 @@ def evaluate_expression(tokens, i):
 
 def evaluate_array(tokens, i):
     # Array literal: [ expr, expr, ... ]
-    i += 1  # Salta '['
+    i += 1  # Skip '['
     arr = []
     while i < len(tokens) and tokens[i][0] != 'RBRACKET':
         elem, i = evaluate_expression(tokens, i)
@@ -110,9 +111,9 @@ def evaluate_array(tokens, i):
     return arr, i + 1
 
 def evaluate_function_call(tokens, i):
-    # tokens[i] es ID y tokens[i+1] es LPAREN
+    # tokens[i] is ID and tokens[i+1] is LPAREN
     func_name = tokens[i][1]
-    i += 2  # Salta ID y LPAREN
+    i += 2  # Skip ID and LPAREN
     args = []
     if i < len(tokens) and tokens[i][0] != 'RPAREN':
         while True:
@@ -131,7 +132,7 @@ def evaluate_function_call(tokens, i):
     params = func_def['params']
     if len(args) != len(params):
         raise TypeError(f"Function '{func_name}' expects {len(params)} arguments, got {len(args)}")
-    # Crear entorno local para la función
+    # Create a local environment for the function
     local_env = copy.deepcopy(env)
     for p, arg in zip(params, args):
         local_env[p] = arg
@@ -153,6 +154,33 @@ def execute_print(tokens, i, local_env):
         raise SyntaxError("Expected ')' after expression")
     print(value)
     return i + 1
+
+def execute_input(tokens, i, local_env):
+    if tokens[i][0] != 'INPUT':
+        raise SyntaxError("Expected 'entrada'")
+    i += 1
+    if i >= len(tokens) or tokens[i][0] != 'LPAREN':
+        raise SyntaxError("Expected '(' after 'entrada'")
+    i += 1
+    
+    # Check if there's a prompt message
+    prompt = ""
+    if i < len(tokens) and tokens[i][0] != 'RPAREN':
+        prompt_value, i = evaluate_expression_with_env(tokens, i, local_env)
+        prompt = str(prompt_value)
+    
+    if i >= len(tokens) or tokens[i][0] != 'RPAREN':
+        raise SyntaxError("Expected ')' after input expression")
+    
+    # Get user input
+    user_input = input(prompt)
+    
+    # Try to convert to integer if possible
+    try:
+        return int(user_input), i + 1
+    except ValueError:
+        # Otherwise return as string
+        return user_input, i + 1
 
 def evaluate_expression_with_env(tokens, i, local_env):
     def evaluate_primary_env(tokens, i):
@@ -178,8 +206,11 @@ def evaluate_expression_with_env(tokens, i, local_env):
             return result, i + 1
         elif token_type == 'LBRACKET':
             return evaluate_array(tokens, i)
+        elif token_type == 'INPUT':
+            return execute_input(tokens, i, local_env)
         else:
             raise SyntaxError(f"Unexpected token: {token_type} {token_value}")
+    
     left, i = evaluate_primary_env(tokens, i)
     while i < len(tokens) and tokens[i][0] in ('PLUS', 'MINUS', 'TIMES', 'DIVIDE', 'GT', 'LT'):
         op = tokens[i][0]
@@ -299,7 +330,8 @@ def execute_else(tokens, i, local_env):
     if brace_count != 0:
         raise SyntaxError("Expected '}' after else body")
     i += 1
-    execute_block(body_tokens, 0, local_env)
+    if local_env is not None:  # Only execute if not skipping
+        execute_block(body_tokens, 0, local_env)
     return i
 
 def execute_while(tokens, i, local_env):
@@ -317,7 +349,6 @@ def execute_while(tokens, i, local_env):
     if i >= len(tokens) or tokens[i][0] != 'LBRACE':
         raise SyntaxError("Expected '{' after condition")
     i += 1
-    body_start = i
     body_tokens = []
     brace_count = 1
     while i < len(tokens) and brace_count > 0:
@@ -448,8 +479,19 @@ def execute_block(tokens, i=0, local_env=None):
         t = tokens[i][0]
         if t == 'PRINT':
             i = execute_print(tokens, i, local_env)
+        elif t == 'INPUT':
+            # User input can be evaluated like an expression
+            value, i = execute_input(tokens, i, local_env)
+            # Skip the result unless we're assigning it
         elif t == 'ID':
-            i = execute_assignment(tokens, i, local_env)
+            # Check if this is a function call statement or an assignment.
+            if i + 1 < len(tokens) and tokens[i+1][0] == 'LPAREN':
+                # It's a function call used as a statement.
+                # Evaluate the function call and ignore the return value.
+                _, i = evaluate_function_call_env(tokens, i, local_env)
+            else:
+                # It's an assignment statement.
+                i = execute_assignment(tokens, i, local_env)
         elif t == 'IF':
             i = execute_if(tokens, i, local_env)
         elif t == 'ELSE':
@@ -461,7 +503,7 @@ def execute_block(tokens, i=0, local_env=None):
         elif t == 'FUNC':
             i = execute_func(tokens, i, local_env)
         elif t == 'RETORNA':
-            i = execute_return(tokens, i, local_env)  # Lanza excepción ReturnException
+            i = execute_return(tokens, i, local_env)  # Raises ReturnException
         elif t in ('LBRACE', 'RBRACE'):
             i += 1
         else:
@@ -472,65 +514,12 @@ def run_program(code):
     tokens = tokenize(code)
     execute_block(tokens)
 
-# # Caso de prueba original
-# code = '''
-# imprimir("Hola Mundo")
-# x = 5
-# y = 10
-# imprimir(x + y)
-# si (x > y) {
-#     imprimir("x es mayor que y")
-# } alreves {
-#     imprimir("y es mayor que x")
-# }
-# '''
-# run_program(code)
-
-# # Caso de prueba: while (mientras)
-# code_mientras = '''
-# contador = 0
-# mientras (contador < 3) {
-#     imprimir(contador)
-#     contador = contador + 1
-# }
-# '''
-# print("\n--- Ejecutando 'mientras' ---")
-# run_program(code_mientras)
-
-# # Caso de prueba: for (para)
-# code_para = '''
-# para (i = 0; i < 3; i = i + 1) {
-#     imprimir(i)
-# }
-# '''
-# print("\n--- Ejecutando 'para' ---")
-# run_program(code_para)
-
-# # Caso de prueba: función y llamada
-# code_func = '''
-# funcion suma(a, b) {
-#     retorna a + b
-# }
-# resultado = suma(5, 7)
-# imprimir(resultado)
-# '''
-# print("\n--- Ejecutando función 'suma' ---")
-# run_program(code_func)
-
-# # Caso de prueba: array
-# code_array = '''
-# miArray = [1, 2, 3, 4]
-# imprimir(miArray)
-# '''
-# print("\n--- Ejecutando array ---")
-# run_program(code_array)
-
 def run_program_from_file(file_path):
     with open(file_path, 'r') as file:
         code = file.read()
         run_program(code)
 
-# Ejecutar programa desde archivo
+# Run program from file or start REPL
 import os
 import sys
 
@@ -545,18 +534,17 @@ def repl():
         except Exception as e:
             print(f"Error: {e}")
 
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        repl()
+        sys.exit(0)
 
+    file_path = sys.argv[1]
+    if not file_path.endswith('.sp'):
+        print("Error: The file must have a .sp extension")
+        sys.exit(1)
 
-if len(sys.argv) < 2:
-    repl()
-    sys.exit(0)
-
-file_path = sys.argv[1]
-if not file_path.endswith('.sp'):
-    print("Error: The file must have a .sp extension")
-    sys.exit(1)
-
-if os.path.exists(file_path):
-    run_program_from_file(file_path)
-else:
-    print(f"El archivo {file_path} no existe.")
+    if os.path.exists(file_path):
+        run_program_from_file(file_path)
+    else:
+        print(f"El archivo {file_path} no existe.")

@@ -5,7 +5,7 @@ class ReturnException(Exception):
     def __init__(self, value):
         self.value = value
 
-# Global environment: almacena variables y funciones
+# Global environment: stores variables and functions
 env = {}
 
 def tokenize(code):
@@ -54,7 +54,7 @@ def evaluate_primary(tokens, i):
     if i >= len(tokens):
         raise SyntaxError("Unexpected end of expression")
     token_type, token_value = tokens[i]
-    # Función call: ID seguido de LPAREN
+    # Function call: ID followed by LPAREN
     if token_type == 'ID' and (i+1 < len(tokens) and tokens[i+1][0] == 'LPAREN'):
         return evaluate_function_call(tokens, i)
     if token_type == 'NUMBER':
@@ -99,7 +99,7 @@ def evaluate_expression(tokens, i):
 
 def evaluate_array(tokens, i):
     # Array literal: [ expr, expr, ... ]
-    i += 1  # Salta '['
+    i += 1  # Skip '['
     arr = []
     while i < len(tokens) and tokens[i][0] != 'RBRACKET':
         elem, i = evaluate_expression(tokens, i)
@@ -111,9 +111,9 @@ def evaluate_array(tokens, i):
     return arr, i + 1
 
 def evaluate_function_call(tokens, i):
-    # tokens[i] es ID y tokens[i+1] es LPAREN
+    # tokens[i] is ID and tokens[i+1] is LPAREN
     func_name = tokens[i][1]
-    i += 2  # Salta ID y LPAREN
+    i += 2  # Skip ID and LPAREN
     args = []
     if i < len(tokens) and tokens[i][0] != 'RPAREN':
         while True:
@@ -132,7 +132,7 @@ def evaluate_function_call(tokens, i):
     params = func_def['params']
     if len(args) != len(params):
         raise TypeError(f"Function '{func_name}' expects {len(params)} arguments, got {len(args)}")
-    # Crear entorno local para la función
+    # Create a local environment for the function
     local_env = copy.deepcopy(env)
     for p, arg in zip(params, args):
         local_env[p] = arg
@@ -349,7 +349,6 @@ def execute_while(tokens, i, local_env):
     if i >= len(tokens) or tokens[i][0] != 'LBRACE':
         raise SyntaxError("Expected '{' after condition")
     i += 1
-    body_start = i
     body_tokens = []
     brace_count = 1
     while i < len(tokens) and brace_count > 0:
@@ -485,7 +484,14 @@ def execute_block(tokens, i=0, local_env=None):
             value, i = execute_input(tokens, i, local_env)
             # Skip the result unless we're assigning it
         elif t == 'ID':
-            i = execute_assignment(tokens, i, local_env)
+            # Check if this is a function call statement or an assignment.
+            if i + 1 < len(tokens) and tokens[i+1][0] == 'LPAREN':
+                # It's a function call used as a statement.
+                # Evaluate the function call and ignore the return value.
+                _, i = evaluate_function_call_env(tokens, i, local_env)
+            else:
+                # It's an assignment statement.
+                i = execute_assignment(tokens, i, local_env)
         elif t == 'IF':
             i = execute_if(tokens, i, local_env)
         elif t == 'ELSE':
@@ -497,7 +503,7 @@ def execute_block(tokens, i=0, local_env=None):
         elif t == 'FUNC':
             i = execute_func(tokens, i, local_env)
         elif t == 'RETORNA':
-            i = execute_return(tokens, i, local_env)  # Lanza excepción ReturnException
+            i = execute_return(tokens, i, local_env)  # Raises ReturnException
         elif t in ('LBRACE', 'RBRACE'):
             i += 1
         else:
@@ -513,7 +519,7 @@ def run_program_from_file(file_path):
         code = file.read()
         run_program(code)
 
-# Ejecutar programa desde archivo
+# Run program from file or start REPL
 import os
 import sys
 

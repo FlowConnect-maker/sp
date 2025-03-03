@@ -17,7 +17,8 @@ def tokenize(code):
         ('MIENTRAS', r'mientras'),
         ('PARA', r'para'),
         ('PRINT', r'imprimir'),
-        ('INPUT', r'entrada'),  # New token for input
+        ('IMPORT', r'importar'),
+        ('TABLE', r't'),
         ('IF', r'si'),
         ('ELSE', r'alreves'),
         ('ID', r'[a-zA-Z_][a-zA-Z0-9_]*'),
@@ -155,6 +156,32 @@ def execute_print(tokens, i, local_env):
     print(value)
     return i + 1
 
+def execute_import(tokens, i, local_env):
+    if tokens[i][0] != 'IMPORT':
+        raise SyntaxError("Expected 'importar'")
+    i += 1
+    if i >= len(tokens) or tokens[i][0] != 'LPAREN':
+        raise SyntaxError("Expected '(' after expresion")
+    i += 1
+    value, i = evaluate_expression_with_env(tokens, i, local_env)
+    if i >= len(tokens) or tokens[i][0] != 'RPAREN':
+        raise SyntaxError("Expected ')' after expression")
+    # CODE OF THE BLOCK HERE, <value> for the value of the block
+
+    lcfile_path = value
+    if not lcfile_path.endswith('.sp'):
+        print("Error: The file must have a .sp extension")
+        sys.exit(1)
+
+    if os.path.exists(lcfile_path):
+        run_program_from_file(lcfile_path)
+    else:
+        print(f"El archivo {lcfile_path} no existe.")
+
+    return i + 1
+
+
+
 def execute_input(tokens, i, local_env):
     if tokens[i][0] != 'INPUT':
         raise SyntaxError("Expected 'entrada'")
@@ -195,6 +222,7 @@ def evaluate_expression_with_env(tokens, i, local_env):
             return token_value[1:-1], i + 1
         elif token_type == 'ID':
             if token_value in local_env:
+
                 return local_env[token_value], i + 1
             else:
                 raise NameError(f"Variable '{token_value}' not defined")
@@ -475,6 +503,7 @@ def execute_return(tokens, i, local_env):
 def execute_block(tokens, i=0, local_env=None):
     if local_env is None:
         local_env = env
+        
     while i < len(tokens):
         t = tokens[i][0]
         if t == 'PRINT':
@@ -502,6 +531,8 @@ def execute_block(tokens, i=0, local_env=None):
             i = execute_for(tokens, i, local_env)
         elif t == 'FUNC':
             i = execute_func(tokens, i, local_env)
+        elif t == 'IMPORT':
+            i = execute_import(tokens, i, local_env)
         elif t == 'RETORNA':
             i = execute_return(tokens, i, local_env)  # Raises ReturnException
         elif t in ('LBRACE', 'RBRACE'):
@@ -513,6 +544,7 @@ def execute_block(tokens, i=0, local_env=None):
 def run_program(code):
     tokens = tokenize(code)
     execute_block(tokens)
+
 
 def run_program_from_file(file_path):
     with open(file_path, 'r') as file:
